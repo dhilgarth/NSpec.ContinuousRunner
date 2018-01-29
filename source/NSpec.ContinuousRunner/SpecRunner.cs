@@ -8,9 +8,9 @@ namespace NSpec.ContinuousRunner
 {
     public class SpecRunner
     {
-        private readonly string _runnerPath;
         private readonly string _pathToSpecDll;
         private readonly IEnumerable<string> _runnerArguments;
+        private readonly string _runnerPath;
 
         public SpecRunner(string runnerPath, string pathToSpecDll, IEnumerable<string> runnerArguments)
         {
@@ -19,7 +19,7 @@ namespace NSpec.ContinuousRunner
             _runnerArguments = runnerArguments ?? throw new ArgumentNullException(nameof(runnerArguments));
         }
 
-        public void RunSpecs()
+        public virtual void RunSpecs()
         {
             var runnerArguments = new List<string> { _pathToSpecDll };
             runnerArguments.AddRange(_runnerArguments);
@@ -32,11 +32,21 @@ namespace NSpec.ContinuousRunner
                 RedirectStandardError = true
             };
             var process = Process.Start(startInfo);
-            process.OutputDataReceived += (_, eventArgs) => Console.WriteLine(eventArgs.Data);
-            process.ErrorDataReceived += (_, eventArgs) => Console.Error.WriteLine(eventArgs.Data);
+            process.OutputDataReceived += (_, eventArgs) => OnOutputDataReceived(eventArgs.Data);
+            process.ErrorDataReceived += (_, eventArgs) => OnErrorDataReceived(eventArgs.Data);
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
             process.WaitForExit();
+        }
+
+        protected virtual void OnErrorDataReceived(string data)
+        {
+            Console.Error.WriteLine(data);
+        }
+
+        protected virtual void OnOutputDataReceived(string data)
+        {
+            Console.WriteLine(data);
         }
     }
 }

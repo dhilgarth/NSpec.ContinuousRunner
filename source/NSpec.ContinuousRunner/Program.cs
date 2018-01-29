@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -50,7 +49,7 @@ namespace NSpec.ContinuousRunner
                     "Unable to detect path of NSpecRunner.exe. Please specify it manually with the --runnerPath argument. If you did, it couldn't be found at that location.");
             }
 
-            _specRunner = new SpecRunner(runnerPath, pathToSpecDll, runnerArguments);
+            _specRunner = CreateSpecRunner(runnerPath, pathToSpecDll, runnerArguments);
             _specRunner.RunSpecs();
             CreateFileSystemWatcher(pathToSpecDll);
             _watcher.EnableRaisingEvents = true;
@@ -66,6 +65,16 @@ namespace NSpec.ContinuousRunner
             };
             _watcher.Changed += OnSpecDllChanged;
             _watcher.Created += OnSpecDllChanged;
+        }
+
+        private static SpecRunner CreateSpecRunner(
+            string runnerPath,
+            string pathToSpecDll,
+            IReadOnlyCollection<string> runnerArguments)
+        {
+            if (runnerArguments.Any(x => x.Equals("--formatter=HtmlFormatter", StringComparison.OrdinalIgnoreCase)))
+                return new HtmlSpecRunner(runnerPath, pathToSpecDll, runnerArguments);
+            return new SpecRunner(runnerPath, pathToSpecDll, runnerArguments);
         }
 
         /// <summary>
