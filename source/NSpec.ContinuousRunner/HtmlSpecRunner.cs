@@ -2,6 +2,8 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
+using System.Net.NetworkInformation;
 using System.Threading;
 using Unosquare.Labs.EmbedIO;
 using Unosquare.Labs.EmbedIO.Modules;
@@ -18,7 +20,7 @@ namespace NSpec.ContinuousRunner
     var iframe = document.getElementById('report');
     var iframeSrc = '{0}';
     var fallback = document.getElementById('fallback');
-    var connection = new WebSocket('ws://localhost:42123/refresh');
+    var connection = new WebSocket('ws://localhost:{1}/refresh');
     connection.onmessage = function() {{
         iframe.src = iframeSrc;
         iframe.style.display = 'block';
@@ -28,12 +30,11 @@ namespace NSpec.ContinuousRunner
 </body>
 </html>";
 
-        private const string UrlPrefix = "http://localhost:42123";
+        private readonly List<string> _htmlReportLines = new List<string>();
         private readonly string _reportPath;
         private readonly WebServer _server;
         private readonly NeedsRefreshWebSocketsServer _webSocketsServer;
-        private readonly List<string> _htmlReportLines = new List<string>();
-        private string _containerUrl;
+        private readonly string _containerUrl;
 
         public HtmlSpecRunner(string runnerPath, string pathToSpecDll, IEnumerable<string> runnerArguments)
             : base(runnerPath, pathToSpecDll, runnerArguments)
@@ -43,7 +44,9 @@ namespace NSpec.ContinuousRunner
             var reportFileName = Path.GetFileNameWithoutExtension(pathToSpecDll) + ".html";
             var reportContainerFileName = Path.GetFileNameWithoutExtension(pathToSpecDll) + ".container.html";
             _reportPath = Path.Combine(reportsPath, reportFileName);
-            _server = WebServer.Create(UrlPrefix).WithStaticFolderAt(reportsPath, useDirectoryBrowser: true);
+            var port = GetAvailablePort(42123);
+            var urlPrefix = $"http://localhost:{port}";
+            _server = WebServer.Create(urlPrefix).WithStaticFolderAt(reportsPath, useDirectoryBrowser: true);
             _server.RegisterModule(new WebSocketsModule());
             _webSocketsServer = new NeedsRefreshWebSocketsServer();
             _server.Module<WebSocketsModule>().RegisterWebSocketsServer("/refresh", _webSocketsServer);
@@ -53,11 +56,11 @@ namespace NSpec.ContinuousRunner
 
             File.WriteAllText(
                 Path.Combine(reportsPath, reportContainerFileName),
-                string.Format(HtmlContainerTemplate, $"{UrlPrefix}/{reportFileName}"));
+                string.Format(HtmlContainerTemplate, $"{urlPrefix}/{reportFileName}", port));
 
             _server.RunAsync();
 
-            _containerUrl = $"{UrlPrefix}/{reportContainerFileName}";
+            _containerUrl = $"{urlPrefix}/{reportContainerFileName}";
             Process.Start(_containerUrl);
         }
 
@@ -93,9 +96,37 @@ namespace NSpec.ContinuousRunner
                 }
                 catch (IOException)
                 {
-
                 }
             }
+        }
+
+        private static int GetAvailablePort(int startingPort)
+        {
+            var portArray = new List<int>();
+
+            var properties = IPGlobalProperties.GetIPGlobalProperties();
+
+            //getting active connections
+            var connections = properties.GetActiveTcpConnections();
+            portArray.AddRange(from n in connections where n.LocalEndPoint.Port >= startingPort select n.LocalEndPoint.Port);
+
+            //getting active tcp listners - WCF service listening in tcp
+            var endPoints = properties.GetActiveTcpListeners();
+            portArray.AddRange(endPoints.Where(n => n.Port >= startingPort).Select(n => n.Port));
+
+            //getting active udp listeners
+            endPoints = properties.GetActiveUdpListeners();
+            portArray.AddRange(endPoints.Where(n => n.Port >= startingPort).Select(n => n.Port));
+
+            portArray.Sort();
+
+            for (var i = startingPort; i < ushort.MaxValue; i++)
+            {
+                if (!portArray.Contains(i))
+                    return i;
+            }
+
+            return 0;
         }
 
         private void NotifyClientsOfNeededRefresh()
